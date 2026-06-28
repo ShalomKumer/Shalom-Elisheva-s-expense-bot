@@ -1,4 +1,5 @@
 import "dotenv/config";
+import express from "express";
 import { Bot, Keyboard } from "grammy";
 import { connectDB } from "./db.js";
 import {
@@ -10,6 +11,9 @@ import {
 import { showBalance } from "./handlers/balance.js";
 import { showSummary } from "./handlers/summary.js";
 import { cancelLast } from "./handlers/cancel.js";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -96,6 +100,9 @@ bot.on("message:text", async (ctx) => {
 bot.catch((err) => {
   console.error("שגיאה בבוט:", err);
 });
+
+app.get("/", (req, res) => res.send("הבוט רץ! 🤖"));
+app.listen(PORT, () => console.log(`שרת HTTP רץ על פורט ${PORT}`));
 
 // ---- הפעלה ----
 await connectDB();
