@@ -2,25 +2,42 @@ import { InlineKeyboard } from 'grammy';
 import { Transaction } from '../models/Transaction.js';
 import { Account } from '../models/Account.js';
 
-// זיכרון זמני של השיחה — שומר את הצעדים של כל משתמש
 const sessions = {};
 
-const CATEGORIES = [
+const EXPENSE_CATEGORIES = [
   'שכר דירה',
-  'מזון וקניות',
-  'יציאות ודייטים',
-  'תחבורה',
-  'בריאות',
-  'ביגוד',
-  'מנויים',
-  'חיסכון',
+  'ניקוי עוסק פטור',
+  'רואת חשבון',
+  'חשמל',
+  'מים',
+  'אינטרנט',
+  'AI',
+  'מכונת כביסה',
+  'נסיעות',
+  'רפואה וויטמינים',
+  'פארם',
+  'קניות שבועיות',
+  'יציאות',
+  'ביגוד והנעלה',
+  'קניות גדולות',
+  'רכב',
+  'מעבר דירה',
+  'מנוי חד פעמי',
+  'בלת"ם',
   'אחר',
 ];
 
-// ---- שלב 1: בחירת סוג (הוצאה / הכנסה) ----
+const INCOME_CATEGORIES = [
+  'משכורת חודשית',
+  'סכום תקופתי',
+  'עבודות אחרות',
+  'אחר',
+];
+
+// ---- שלב 1: בחירת חשבון ----
 export async function startExpense(ctx, type) {
   const userId = ctx.from.id;
-  sessions[userId] = { type }; // 'expense' או 'income'
+  sessions[userId] = { type };
 
   const keyboard = new InlineKeyboard()
     .text('👤 שלום', 'account_shalom')
@@ -37,8 +54,10 @@ export async function handleAccount(ctx) {
 
   await ctx.answerCallbackQuery();
 
+  const categories = sessions[userId].type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+
   const keyboard = new InlineKeyboard();
-  CATEGORIES.forEach((cat, i) => {
+  categories.forEach((cat, i) => {
     keyboard.text(cat, `cat_${i}`);
     if (i % 2 === 1) keyboard.row();
   });
@@ -49,38 +68,60 @@ export async function handleAccount(ctx) {
 // ---- שלב 3: בחירת קטגוריה ----
 export async function handleCategory(ctx) {
   const userId = ctx.from.id;
+  const categories = sessions[userId].type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const index = parseInt(ctx.callbackQuery.data.replace('cat_', ''));
-  sessions[userId].category = CATEGORIES[index];
+  const category = categories[index];
+  sessions[userId].category = category;
 
   await ctx.answerCallbackQuery();
-  await ctx.reply('כמה? (הקלד סכום, למשל: 250)');
+
+  // בלת"ם ומנוי חד פעמי דורשים תיאור תחילה
+  if (category === 'בלת"ם' || category === 'מנוי חד פעמי') {
+    sessions[userId].waitingForDescription = true;
+    const prompt = category === 'מנוי חד פעמי'
+      ? 'איזה מנוי? (למשל: דיסני פלוס)'
+      : 'תאר בקצרה את ההוצאה:';
+    await ctx.reply(prompt);
+    return;
+  }
+
+  await ctx.reply('הכנס סכום:');
 }
 
-// ---- שלב 4: קבלת סכום ורישום ----
+// ---- שלב 4: קבלת תיאור או סכום ----
 export async function handleAmount(ctx) {
   const userId = ctx.from.id;
   const session = sessions[userId];
 
   if (!session || !session.category) return false;
 
-  const amount = parseFloat(ctx.message.text);
-  if (isNaN(amount) || amount <= 0) {
-    await ctx.reply('⚠️ סכום לא תקין. נסה שוב עם מספר, למשל: 250');
+  // אם ממתינים לתיאור
+  if (session.waitingForDescription) {
+    session.description = ctx.message.text;
+    session.waitingForDescription = false;
+    await ctx.reply('הכנס סכום:');
     return true;
   }
 
-  // הוצאה = סכום שלילי, הכנסה = חיובי
+  // קבלת סכום
+  const amount = parseFloat(ctx.message.text);
+  if (isNaN(amount) || amount <= 0) {
+    await ctx.reply('⚠️ סכום לא תקין. הכנס מספר, למשל: 250');
+    return true;
+  }
+
   const finalAmount = session.type === 'expense' ? -amount : amount;
+  const description = session.description || session.category;
 
   await Transaction.create({
     account: session.account,
     amount: finalAmount,
-    description: session.category,
-    category: session.type === 'income' ? 'הכנסה' : session.category,
+    description,
+    category: session.category,
     addedBy: userId,
   });
 
-  // חישוב יתרה עדכנית
+  // חישוב יתרה
   const accountDoc = await Account.findOne({ owner: session.account });
   const transactions = await Transaction.find({ account: session.account });
   const total = transactions.reduce((sum, t) => sum + t.amount, 0);
@@ -88,11 +129,13 @@ export async function handleAmount(ctx) {
 
   const accountName = session.account === 'shalom' ? 'שלום' : 'אלישבע';
   const emoji = session.type === 'expense' ? '💸' : '💰';
+  const typeText = session.type === 'expense' ? 'הוצאה' : 'הכנסה';
 
   await ctx.reply(
     `${emoji} נרשם!\n` +
-    `${session.type === 'expense' ? 'הוצאה' : 'הכנסה'} של ${amount}₪\n` +
-    `קטגוריה: ${session.category}\n` +
+    `${typeText} של ${amount.toLocaleString('he-IL')}₪\n` +
+    `קטגוריה: ${session.category}` +
+    (session.description ? ` (${session.description})` : '') + '\n' +
     `חשבון: ${accountName}\n\n` +
     `💳 יתרה עכשיו בחשבון ${accountName}: ${balance.toLocaleString('he-IL')}₪`
   );
