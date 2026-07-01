@@ -18,6 +18,7 @@ const EXPENSE_CATEGORIES = [
   'פארם',
   'קניות שבועיות',
   'יציאות',
+  'אוכל בחוץ',
   'ביגוד והנעלה',
   'קניות גדולות',
   'רכב',
@@ -29,12 +30,13 @@ const EXPENSE_CATEGORIES = [
 
 const INCOME_CATEGORIES = [
   'משכורת חודשית',
-  'סכום תקופתי',
+  'פוד-סטאמפס',
   'עבודות אחרות',
   'אחר',
 ];
 
-// ---- שלב 1: בחירת חשבון ----
+const FREE_TEXT_CATEGORIES = ['בלת"ם', 'מנוי חד פעמי', 'אחר'];
+
 export async function startExpense(ctx, type) {
   const userId = ctx.from.id;
   sessions[userId] = { type };
@@ -46,7 +48,6 @@ export async function startExpense(ctx, type) {
   await ctx.reply('באיזה חשבון?', { reply_markup: keyboard });
 }
 
-// ---- שלב 2: בחירת חשבון ----
 export async function handleAccount(ctx) {
   const userId = ctx.from.id;
   const account = ctx.callbackQuery.data === 'account_shalom' ? 'shalom' : 'elisheva';
@@ -65,7 +66,6 @@ export async function handleAccount(ctx) {
   await ctx.reply('באיזו קטגוריה?', { reply_markup: keyboard });
 }
 
-// ---- שלב 3: בחירת קטגוריה ----
 export async function handleCategory(ctx) {
   const userId = ctx.from.id;
   const categories = sessions[userId].type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
@@ -75,27 +75,26 @@ export async function handleCategory(ctx) {
 
   await ctx.answerCallbackQuery();
 
-  // בלת"ם ומנוי חד פעמי דורשים תיאור תחילה
-  if (category === 'בלת"ם' || category === 'מנוי חד פעמי') {
+  if (FREE_TEXT_CATEGORIES.includes(category)) {
     sessions[userId].waitingForDescription = true;
-    const prompt = category === 'מנוי חד פעמי'
-      ? 'איזה מנוי? (למשל: דיסני פלוס)'
-      : 'תאר בקצרה את ההוצאה:';
-    await ctx.reply(prompt);
+    const prompts = {
+      'מנוי חד פעמי': 'איזה מנוי? (למשל: דיסני פלוס)',
+      'בלת"ם': 'תאר בקצרה את ההוצאה:',
+      'אחר': 'רשום במה מדובר:',
+    };
+    await ctx.reply(prompts[category]);
     return;
   }
 
   await ctx.reply('הכנס סכום:');
 }
 
-// ---- שלב 4: קבלת תיאור או סכום ----
 export async function handleAmount(ctx) {
   const userId = ctx.from.id;
   const session = sessions[userId];
 
   if (!session || !session.category) return false;
 
-  // אם ממתינים לתיאור
   if (session.waitingForDescription) {
     session.description = ctx.message.text;
     session.waitingForDescription = false;
@@ -103,7 +102,6 @@ export async function handleAmount(ctx) {
     return true;
   }
 
-  // קבלת סכום
   const amount = parseFloat(ctx.message.text);
   if (isNaN(amount) || amount <= 0) {
     await ctx.reply('⚠️ סכום לא תקין. הכנס מספר, למשל: 250');
@@ -121,7 +119,6 @@ export async function handleAmount(ctx) {
     addedBy: userId,
   });
 
-  // חישוב יתרה
   const accountDoc = await Account.findOne({ owner: session.account });
   const transactions = await Transaction.find({ account: session.account });
   const total = transactions.reduce((sum, t) => sum + t.amount, 0);
@@ -135,7 +132,7 @@ export async function handleAmount(ctx) {
     `${emoji} נרשם!\n` +
     `${typeText} של ${amount.toLocaleString('he-IL')}₪\n` +
     `קטגוריה: ${session.category}` +
-    (session.description ? ` (${session.description})` : '') + '\n' +
+    (session.description ? ` — ${session.description}` : '') + '\n' +
     `חשבון: ${accountName}\n\n` +
     `💳 יתרה עכשיו בחשבון ${accountName}: ${balance.toLocaleString('he-IL')}₪`
   );

@@ -11,6 +11,11 @@ import {
 import { showBalance } from './handlers/balance.js';
 import { showSummary, handleSummaryMonth } from './handlers/summary.js';
 import { cancelLast, confirmCancel, abortCancel } from './handlers/cancel.js';
+import {
+  startUpdateBalance,
+  handleBalanceAccount,
+  handleBalanceAmount,
+} from './handlers/updateBalance.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,7 +37,7 @@ const bot = new Bot(token);
 const mainKeyboard = new Keyboard()
   .text('💸 הוצאה').text('💰 הכנסה').row()
   .text('💳 יתרה').text('📊 סיכום').row()
-  .text('↩️ ביטול')
+  .text('↩️ ביטול').text('🔄 עדכון יתרה')
   .resized()
   .persistent();
 
@@ -81,6 +86,7 @@ bot.callbackQuery(/^cat_/, handleCategory);
 bot.callbackQuery(/^summary_/, handleSummaryMonth);
 bot.callbackQuery('confirm_cancel', confirmCancel);
 bot.callbackQuery('abort_cancel', abortCancel);
+bot.callbackQuery(/^balance_account_/, handleBalanceAccount);
 
 // ---- הודעות טקסט ----
 bot.on('message:text', async (ctx) => {
@@ -91,6 +97,11 @@ bot.on('message:text', async (ctx) => {
   if (text === '💳 יתרה') return showBalance(ctx);
   if (text === '📊 סיכום') return showSummary(ctx);
   if (text === '↩️ ביטול') return cancelLast(ctx);
+  if (text === '🔄 עדכון יתרה') return startUpdateBalance(ctx);
+
+  // ניסיון לטפל בסכום — קודם עדכון יתרה, אחר כך הוצאה/הכנסה
+  const balanceHandled = await handleBalanceAmount(ctx);
+  if (balanceHandled) return;
 
   const handled = await handleAmount(ctx);
   if (!handled) {
