@@ -1,9 +1,8 @@
 import { InlineKeyboard } from "grammy";
 import { Transaction } from "../models/Transaction.js";
-import { startInstallmentFromExpense } from "./installment.js";
 import { Account } from "../models/Account.js";
 
-const sessions = {};
+export const sessions = {};
 
 const EXPENSE_CATEGORIES = [
   "שכר דירה",
@@ -31,7 +30,7 @@ const EXPENSE_CATEGORIES = [
 
 const INCOME_CATEGORIES = [
   "משכורת חודשית",
-  "פוד-סטאמפס",
+  "סכום תקופתי",
   "עבודות אחרות",
   "אחר",
 ];
@@ -80,9 +79,13 @@ export async function handleCategory(ctx) {
   await ctx.answerCallbackQuery();
 
   if (category === "קניות גדולות") {
-    await ctx.answerCallbackQuery();
-    await startInstallmentFromExpense(ctx, sessions[userId].account);
-    delete sessions[userId];
+    const account = sessions[userId].account;
+    sessions[userId] = {
+      action: "installment",
+      step: "name",
+      account,
+    };
+    await ctx.reply("מה שם הקנייה? (למשל: אייפון)");
     return;
   }
 
@@ -146,7 +149,7 @@ export async function handleAmount(ctx) {
       (session.description ? ` — ${session.description}` : "") +
       "\n" +
       `חשבון: ${accountName}\n\n` +
-      `💳 יתרה עכשיו בחשבון ${accountName}: ${balance.toLocaleString("he-IL")}₪`,
+      `💳 יתרה עכשיו בחשבון ${accountName}: ${balance.toLocaleString("he-IL")}₪`
   );
 
   delete sessions[userId];
