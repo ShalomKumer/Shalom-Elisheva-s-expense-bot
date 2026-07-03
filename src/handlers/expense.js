@@ -1,5 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { Transaction } from "../models/Transaction.js";
+import { startInstallmentFromExpense } from "./installment.js";
 import { Account } from "../models/Account.js";
 
 const sessions = {};
@@ -80,13 +81,11 @@ export async function handleCategory(ctx) {
 
   if (category === "קניות גדולות") {
     await ctx.answerCallbackQuery();
-    // מעביר את החשבון ל-session של התשלומים
-    const { startInstallmentFromExpense } = await import("./installment.js");
     await startInstallmentFromExpense(ctx, sessions[userId].account);
     delete sessions[userId];
     return;
   }
-  
+
   if (FREE_TEXT_CATEGORIES.includes(category)) {
     sessions[userId].waitingForDescription = true;
     const prompts = {
