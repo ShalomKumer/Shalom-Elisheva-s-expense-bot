@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { Transaction } from '../models/Transaction.js';
+import { Installment } from '../models/Installment.js';
 
 const MONTHS_HE = [
   'ינואר', 'פברואר', 'מרץ', 'אפריל',
@@ -35,15 +36,18 @@ export async function handleSummaryMonth(ctx) {
   });
 
   const monthName = MONTHS_HE[monthIndex];
-  const now2 = new Date();
-  const updateTime = now2.toLocaleString('he-IL', {
+  const updateTime = now.toLocaleString('he-IL', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
   });
 
   if (transactions.length === 0) {
-    await ctx.reply(`📊 סיכום ${monthName} ${year}\n\nאין מידע בחודש ${monthName} 📭\n\nעודכן: ${updateTime}`);
-    return;
+    // בדוק אם יש תשלומים פעילים גם אם אין עסקאות
+    const installments = await Installment.find({ active: true });
+    if (installments.length === 0) {
+      await ctx.reply(`📊 סיכום ${monthName} ${year}\n\nאין מידע בחודש ${monthName} 📭\n\n_עודכן: ${updateTime}_`, { parse_mode: 'Markdown' });
+      return;
+    }
   }
 
   // פירוט לפי חשבון וקטגוריה
@@ -85,6 +89,23 @@ export async function handleSummaryMonth(ctx) {
     }
     const totalElisheva = Object.values(elisheva).reduce((s, d) => s + d.total, 0);
     msg += `*סה"כ: ${totalElisheva.toLocaleString('he-IL')}₪*\n\n`;
+  }
+
+  // ---- תשלומים פעילים ----
+  const installments = await Installment.find({ active: true });
+
+  if (installments.length > 0) {
+    msg += '──────────────\n';
+    msg += '📦 *תשלומים פעילים החודש:*\n';
+
+    let totalInstallments = 0;
+    for (const inst of installments) {
+      const paymentNum = inst.paidMonths;
+      const accountName = inst.account === 'shalom' ? '👤' : '👩';
+      msg += `${accountName} ${inst.name} — ${inst.monthlyAmount.toLocaleString('he-IL')}₪ (תשלום ${paymentNum}/${inst.totalMonths})\n`;
+      totalInstallments += inst.monthlyAmount;
+    }
+    msg += `*סה"כ תשלומים: ${totalInstallments.toLocaleString('he-IL')}₪*\n\n`;
   }
 
   msg += `_עודכן: ${updateTime}_`;
