@@ -1,32 +1,39 @@
-import 'dotenv/config';
-import express from 'express';
-import { Bot, Keyboard } from 'grammy';
-import { connectDB } from './db.js';
+import "dotenv/config";
+import express from "express";
+import { Bot, Keyboard } from "grammy";
+import { connectDB } from "./db.js";
 import {
   startExpense,
   handleAccount,
   handleCategory,
   handleAmount,
-} from './handlers/expense.js';
-import { showBalance } from './handlers/balance.js';
-import { showSummary, handleSummaryMonth } from './handlers/summary.js';
-import { cancelLast, confirmCancel, abortCancel } from './handlers/cancel.js';
+} from "./handlers/expense.js";
+import { showBalance } from "./handlers/balance.js";
+import { showSummary, handleSummaryMonth } from "./handlers/summary.js";
+import { cancelLast, confirmCancel, abortCancel } from "./handlers/cancel.js";
 import {
   startUpdateBalance,
   handleBalanceAccount,
   handleBalanceAmount,
-} from './handlers/updateBalance.js';
+} from "./handlers/updateBalance.js";
+import {
+  startInstallment,
+  handleInstallmentAccount,
+  handleInstallmentText,
+  processMonthlyInstallments,
+  showInstallments,
+} from "./handlers/installment.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
-  throw new Error('חסר BOT_TOKEN בקובץ .env');
+  throw new Error("חסר BOT_TOKEN בקובץ .env");
 }
 
-const allowedIds = (process.env.ALLOWED_IDS || '')
-  .split(',')
+const allowedIds = (process.env.ALLOWED_IDS || "")
+  .split(",")
   .map((id) => id.trim())
   .filter(Boolean)
   .map(Number);
@@ -35,9 +42,10 @@ const bot = new Bot(token);
 
 // ---- מקלדת קבועה ----
 const mainKeyboard = new Keyboard()
-  .text('💸 הוצאה').text('💰 הכנסה').row()
-  .text('💳 יתרה').text('📊 סיכום').row()
-  .text('↩️ ביטול').text('🔄 עדכון יתרה')
+  .text("💸 הוצאה").text("💰 הכנסה").row()
+  .text("💳 יתרה").text("📊 סיכום").row()
+  .text("↩️ ביטול").text("🔄 עדכון יתרה").row()
+  .text("📦 תשלומים")
   .resized()
   .persistent();
 
@@ -47,9 +55,9 @@ bot.use(async (ctx, next) => {
 
   if (allowedIds.length === 0) {
     await ctx.reply(
-      'שלום! עוד לא הוגדרה רשימת מורשים.\n' +
-      `ה-ID שלך בטלגרם הוא: ${userId}\n` +
-      'הוסף אותו ל-ALLOWED_IDS בקובץ .env והפעל מחדש.'
+      "שלום! עוד לא הוגדרה רשימת מורשים.\n" +
+        `ה-ID שלך בטלגרם הוא: ${userId}\n` +
+        "הוסף אותו ל-ALLOWED_IDS בקובץ .env והפעל מחדש."
     );
     return;
   }
@@ -63,61 +71,73 @@ bot.use(async (ctx, next) => {
 });
 
 // ---- פקודת start ----
-bot.command('start', async (ctx) => {
+bot.command("start", async (ctx) => {
   await ctx.reply(
-    `היי ${ctx.from.first_name}! 👋\n\n` +
-    'בחר פעולה מהתפריט למטה:',
+    `היי ${ctx.from.first_name}! 👋\n\n` + "בחר פעולה מהתפריט למטה:",
     { reply_markup: mainKeyboard }
   );
 });
 
 // ---- פקודות ישירות (גיבוי) ----
-bot.command('expense', async (ctx) => {
-  await startExpense(ctx, 'expense');
+bot.command("expense", async (ctx) => {
+  await startExpense(ctx, "expense");
 });
 
-bot.command('income', async (ctx) => {
-  await startExpense(ctx, 'income');
+bot.command("income", async (ctx) => {
+  await startExpense(ctx, "income");
 });
 
 // ---- כפתורי inline ----
 bot.callbackQuery(/^account_/, handleAccount);
+bot.callbackQuery(/^inst_account_/, handleInstallmentAccount);
 bot.callbackQuery(/^cat_/, handleCategory);
 bot.callbackQuery(/^summary_/, handleSummaryMonth);
-bot.callbackQuery('confirm_cancel', confirmCancel);
-bot.callbackQuery('abort_cancel', abortCancel);
+bot.callbackQuery("confirm_cancel", confirmCancel);
+bot.callbackQuery("abort_cancel", abortCancel);
 bot.callbackQuery(/^balance_account_/, handleBalanceAccount);
 
 // ---- הודעות טקסט ----
-bot.on('message:text', async (ctx) => {
+bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
 
-  if (text === '💸 הוצאה') return startExpense(ctx, 'expense');
-  if (text === '💰 הכנסה') return startExpense(ctx, 'income');
-  if (text === '💳 יתרה') return showBalance(ctx);
-  if (text === '📊 סיכום') return showSummary(ctx);
-  if (text === '↩️ ביטול') return cancelLast(ctx);
-  if (text === '🔄 עדכון יתרה') return startUpdateBalance(ctx);
+  if (text === "💸 הוצאה") return startExpense(ctx, "expense");
+  if (text === "💰 הכנסה") return startExpense(ctx, "income");
+  if (text === "💳 יתרה") return showBalance(ctx);
+  if (text === "📊 סיכום") return showSummary(ctx);
+  if (text === "↩️ ביטול") return cancelLast(ctx);
+  if (text === "🔄 עדכון יתרה") return startUpdateBalance(ctx);
+  if (text === "📦 תשלומים") return showInstallments(ctx);
 
-  // ניסיון לטפל בסכום — קודם עדכון יתרה, אחר כך הוצאה/הכנסה
+  const installmentHandled = await handleInstallmentText(ctx);
+  if (installmentHandled) return;
+
   const balanceHandled = await handleBalanceAmount(ctx);
   if (balanceHandled) return;
 
   const handled = await handleAmount(ctx);
   if (!handled) {
-    await ctx.reply('בחר פעולה מהתפריט 👇', { reply_markup: mainKeyboard });
+    await ctx.reply("בחר פעולה מהתפריט 👇", { reply_markup: mainKeyboard });
   }
 });
 
 // ---- טיפול בשגיאות ----
 bot.catch((err) => {
-  console.error('שגיאה בבוט:', err);
+  console.error("שגיאה בבוט:", err);
 });
 
-app.get('/', (req, res) => res.send('הבוט רץ! 🤖'));
+// ---- cron יומי ----
+setInterval(async () => {
+  try {
+    await processMonthlyInstallments();
+  } catch (err) {
+    console.error("שגיאה בעיבוד תשלומים:", err);
+  }
+}, 24 * 60 * 60 * 1000);
+
+app.get("/", (req, res) => res.send("הבוט רץ! 🤖"));
 app.listen(PORT, () => console.log(`שרת HTTP רץ על פורט ${PORT}`));
 
 // ---- הפעלה ----
 await connectDB();
 bot.start();
-console.log('הבוט רץ! שלח לו הודעה בטלגרם.');
+console.log("הבוט רץ! שלח לו הודעה בטלגרם.");
