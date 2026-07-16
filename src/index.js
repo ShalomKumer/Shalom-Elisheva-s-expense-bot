@@ -30,6 +30,7 @@ import {
   handleNewCatSubType,
   handleNewCatName,
   handleDisableCat,
+  handleRecurringAccount,
   getCatSession,
 } from "./handlers/categories.js";
 
@@ -51,8 +52,12 @@ const bot = new Bot(token);
 
 // ---- מקלדת קבועה ----
 const mainKeyboard = new Keyboard()
-  .text("💸 הוצאה").text("💰 הכנסה").row()
-  .text("💳 יתרה").text("📊 סיכום").row()
+  .text("💸 הוצאה")
+  .text("💰 הכנסה")
+  .row()
+  .text("💳 יתרה")
+  .text("📊 סיכום")
+  .row()
   .text("⚙️ נוסף")
   .resized()
   .persistent();
@@ -65,7 +70,7 @@ bot.use(async (ctx, next) => {
     await ctx.reply(
       "שלום! עוד לא הוגדרה רשימת מורשים.\n" +
         `ה-ID שלך בטלגרם הוא: ${userId}\n` +
-        "הוסף אותו ל-ALLOWED_IDS בקובץ .env והפעל מחדש."
+        "הוסף אותו ל-ALLOWED_IDS בקובץ .env והפעל מחדש.",
     );
     return;
   }
@@ -82,7 +87,7 @@ bot.use(async (ctx, next) => {
 bot.command("start", async (ctx) => {
   await ctx.reply(
     `היי ${ctx.from.first_name}! 👋\n\n` + "בחר פעולה מהתפריט למטה:",
-    { reply_markup: mainKeyboard }
+    { reply_markup: mainKeyboard },
   );
 });
 
@@ -92,12 +97,14 @@ bot.callbackQuery(/^inst_account_/, handleInstallmentAccount);
 bot.callbackQuery(/^cat_manage/, handleManageAction);
 bot.callbackQuery(/^new_cat_type_/, handleNewCatType);
 bot.callbackQuery(/^new_cat_sub_/, handleNewCatSubType);
+bot.callbackQuery(/^recurring_account_/, handleRecurringAccount);
 bot.callbackQuery(/^disable_cat_/, handleDisableCat);
 bot.callbackQuery(/^cat_/, handleCategory);
 bot.callbackQuery(/^summary_/, handleSummaryMonth);
 bot.callbackQuery("confirm_cancel", confirmCancel);
 bot.callbackQuery("abort_cancel", abortCancel);
 bot.callbackQuery(/^balance_account_/, handleBalanceAccount);
+
 
 // ---- הודעות טקסט ----
 bot.on("message:text", async (ctx) => {
@@ -131,13 +138,16 @@ bot.catch((err) => {
 });
 
 // ---- cron יומי ----
-setInterval(async () => {
-  try {
-    await processMonthlyInstallments();
-  } catch (err) {
-    console.error("שגיאה בעיבוד תשלומים:", err);
-  }
-}, 24 * 60 * 60 * 1000);
+setInterval(
+  async () => {
+    try {
+      await processMonthlyInstallments();
+    } catch (err) {
+      console.error("שגיאה בעיבוד תשלומים:", err);
+    }
+  },
+  24 * 60 * 60 * 1000,
+);
 
 app.get("/", (req, res) => res.send("הבוט רץ! 🤖"));
 app.listen(PORT, () => console.log(`שרת HTTP רץ על פורט ${PORT}`));

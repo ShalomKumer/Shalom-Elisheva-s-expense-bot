@@ -27,6 +27,10 @@ const installmentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    isIncome: {
+      type: Boolean,
+      default: false,
+    },
     lastPaymentDate: {
       type: Date,
       default: null,
