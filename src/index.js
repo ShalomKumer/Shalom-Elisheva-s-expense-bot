@@ -23,6 +23,15 @@ import {
   processMonthlyInstallments,
   showInstallments,
 } from "./handlers/installment.js";
+import {
+  showManageMenu,
+  handleManageAction,
+  handleNewCatType,
+  handleNewCatSubType,
+  handleNewCatName,
+  handleDisableCat,
+  getCatSession,
+} from "./handlers/categories.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,8 +53,7 @@ const bot = new Bot(token);
 const mainKeyboard = new Keyboard()
   .text("💸 הוצאה").text("💰 הכנסה").row()
   .text("💳 יתרה").text("📊 סיכום").row()
-  .text("↩️ ביטול").text("🔄 עדכון יתרה").row()
-  .text("📦 תשלומים")
+  .text("⚙️ נוסף")
   .resized()
   .persistent();
 
@@ -78,18 +86,13 @@ bot.command("start", async (ctx) => {
   );
 });
 
-// ---- פקודות ישירות (גיבוי) ----
-bot.command("expense", async (ctx) => {
-  await startExpense(ctx, "expense");
-});
-
-bot.command("income", async (ctx) => {
-  await startExpense(ctx, "income");
-});
-
 // ---- כפתורי inline ----
 bot.callbackQuery(/^account_/, handleAccount);
 bot.callbackQuery(/^inst_account_/, handleInstallmentAccount);
+bot.callbackQuery(/^cat_manage/, handleManageAction);
+bot.callbackQuery(/^new_cat_type_/, handleNewCatType);
+bot.callbackQuery(/^new_cat_sub_/, handleNewCatSubType);
+bot.callbackQuery(/^disable_cat_/, handleDisableCat);
 bot.callbackQuery(/^cat_/, handleCategory);
 bot.callbackQuery(/^summary_/, handleSummaryMonth);
 bot.callbackQuery("confirm_cancel", confirmCancel);
@@ -104,9 +107,11 @@ bot.on("message:text", async (ctx) => {
   if (text === "💰 הכנסה") return startExpense(ctx, "income");
   if (text === "💳 יתרה") return showBalance(ctx);
   if (text === "📊 סיכום") return showSummary(ctx);
-  if (text === "↩️ ביטול") return cancelLast(ctx);
-  if (text === "🔄 עדכון יתרה") return startUpdateBalance(ctx);
-  if (text === "📦 תשלומים") return showInstallments(ctx);
+  if (text === "⚙️ נוסף") return showManageMenu(ctx);
+
+  // סדר חשוב: קודם categories, אחר כך installments, אחר כך balance, אחר כך expense
+  const catHandled = await handleNewCatName(ctx);
+  if (catHandled) return;
 
   const installmentHandled = await handleInstallmentText(ctx);
   if (installmentHandled) return;
