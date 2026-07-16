@@ -1,11 +1,11 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const installmentSchema = new mongoose.Schema(
   {
     account: {
       type: String,
       required: true,
-      enum: ['shalom', 'elisheva'],
+      enum: ["shalom", "elisheva"],
     },
     name: {
       type: String,
@@ -27,6 +27,10 @@ const installmentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    lastPaymentDate: {
+      type: Date,
+      default: null,
+    },
     dayOfMonth: {
       type: Number,
       required: true,
@@ -44,7 +48,7 @@ const installmentSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-export const Installment = mongoose.model('Installment', installmentSchema);
+export const Installment = mongoose.model("Installment", installmentSchema);

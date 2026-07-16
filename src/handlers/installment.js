@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { Installment } from "../models/Installment.js";
 import { Transaction } from "../models/Transaction.js";
-import { sessions } from './expense.js';
+import { sessions } from "./expense.js";
 
 export async function startInstallment(ctx) {
   const userId = ctx.from.id;
@@ -58,7 +58,8 @@ export async function handleInstallmentText(ctx) {
     }
 
     session.totalMonths = months;
-    session.monthlyAmount = Math.round((session.totalAmount / months) * 100) / 100;
+    session.monthlyAmount =
+      Math.round((session.totalAmount / months) * 100) / 100;
 
     const now = new Date();
     const day = now.getDate();
@@ -84,6 +85,12 @@ export async function handleInstallmentText(ctx) {
     });
 
     if (day < 15) {
+      const newInst = await Installment.findOne({
+        account: session.account,
+        name: session.name,
+        active: true,
+      }).sort({ createdAt: -1 });
+
       await Transaction.create({
         account: session.account,
         amount: -session.monthlyAmount,
@@ -92,10 +99,10 @@ export async function handleInstallmentText(ctx) {
         addedBy: userId,
       });
 
-      await Installment.findOneAndUpdate(
-        { account: session.account, name: session.name, active: true },
-        { $inc: { paidMonths: 1 } }
-      );
+      await Installment.findByIdAndUpdate(newInst._id, {
+        paidMonths: 1,
+        lastPaymentDate: new Date(),
+      });
     }
 
     const accountName = session.account === "shalom" ? "שלום" : "אלישבע";
@@ -103,11 +110,11 @@ export async function handleInstallmentText(ctx) {
 
     await ctx.reply(
       `✅ נרשם!\n\n` +
-      `📦 ${session.name}\n` +
-      `💰 סכום כולל: ${session.totalAmount.toLocaleString("he-IL")}₪\n` +
-      `📅 ${months} תשלומים של ${session.monthlyAmount.toLocaleString("he-IL")}₪\n` +
-      `🗓 תשלום ראשון: ${firstPaymentStr}\n` +
-      `🏦 חשבון: ${accountName}`
+        `📦 ${session.name}\n` +
+        `💰 סכום כולל: ${session.totalAmount.toLocaleString("he-IL")}₪\n` +
+        `📅 ${months} תשלומים של ${session.monthlyAmount.toLocaleString("he-IL")}₪\n` +
+        `🗓 תשלום ראשון: ${firstPaymentStr}\n` +
+        `🏦 חשבון: ${accountName}`,
     );
 
     delete sessions[userId];
@@ -120,12 +127,27 @@ export async function handleInstallmentText(ctx) {
 export async function processMonthlyInstallments() {
   const now = new Date();
   const today = now.getDate();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
 
   const installments = await Installment.find({ active: true });
 
   for (const inst of installments) {
     if (inst.dayOfMonth !== today) continue;
-    if (inst.paidMonths === 0) continue;
+
+    // בדוק אם כבר שולם החודש הזה
+    if (inst.lastPaymentDate) {
+      const lastPay = new Date(inst.lastPaymentDate);
+      if (
+        lastPay.getMonth() === thisMonth &&
+        lastPay.getFullYear() === thisYear
+      ) {
+        continue; // כבר שולם החודש — דלג
+      }
+    }
+
+    // אם עוד לא הגיע תאריך התשלום הראשון — דלג
+    if (new Date() < inst.firstPaymentDate) continue;
 
     const paymentNumber = inst.paidMonths + 1;
 
@@ -137,9 +159,12 @@ export async function processMonthlyInstallments() {
       addedBy: inst.addedBy,
     });
 
+    const isLast = paymentNumber >= inst.totalMonths;
+
     await Installment.findByIdAndUpdate(inst._id, {
       $inc: { paidMonths: 1 },
-      ...(paymentNumber >= inst.totalMonths ? { active: false } : {}),
+      lastPaymentDate: new Date(),
+      ...(isLast ? { active: false } : {}),
     });
   }
 }
